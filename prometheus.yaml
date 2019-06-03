@@ -1,0 +1,149 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: prometheus
+  annotations:
+    "openshift.io/display-name": Prometheus
+    description: Federate another prometheus and add predicted metric targets
+    iconClass: fa fa-cogs
+    tags: "monitoring, prometheus, time-series"
+parameters:
+- description: The namespace to instantiate prometheus under. Defaults to 'kube-system'.
+  name: NAMESPACE
+  value: kube-system
+- description: The location of the prometheus image
+  name: IMAGE_PROMETHEUS
+  value: quay.io/prometheus/prometheus:v2.7.1
+- description: Memory Limit Prometheus
+  name: LIMIT_MEMORY_PROMETHEUS
+  value: 1Gi
+- description: Federation target
+  name: PROM_FEDERATE_TARGET
+- description: Federation Bearer Token
+  name: PROM_FEDERATE_BEARER
+- name: APPLICATION_NAME
+  value: prometheus-lts
+
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: ${APPLICATION_NAME}
+    labels:
+      deploymentConfig: ${APPLICATION_NAME}
+      app: ${APPLICATION_NAME}
+  spec:
+    replicas: 1
+    selector:
+      deploymentConfig: ${APPLICATION_NAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          deploymentConfig: ${APPLICATION_NAME}
+          app: ${APPLICATION_NAME}
+      spec:
+        containers:
+        - name: ${APPLICATION_NAME}
+          args:
+          - --storage.tsdb.retention.time=12h
+          - --storage.tsdb.min-block-duration=2h
+          - --storage.tsdb.max-block-duration=2h
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --web.listen-address=0.0.0.0:9090
+          image: ${IMAGE_PROMETHEUS}
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: '1'
+              memory: ${LIMIT_MEMORY_PROMETHEUS}
+          volumeMounts:
+          - mountPath: /etc/prometheus
+            name: prometheus-config
+          - mountPath: /prometheus
+            name: prometheus-data
+        restartPolicy: Always
+        volumes:
+        - name: prometheus-config
+          configMap:
+            defaultMode: 420
+            name: prometheus
+        - name: prometheus-data
+          emptyDir: {}
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}-service
+    labels:
+      app: ${APPLICATION_NAME}
+  spec:
+    ports:
+    - port: 9090
+      name: http
+    selector:
+      app: ${APPLICATION_NAME}
+
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: ${APPLICATION_NAME}-route
+    labels:
+      app: ${APPLICATION_NAME}
+  spec:
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}-service
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: ${APPLICATION_NAME}
+    namespace: "${NAMESPACE}"
+  data:
+    prometheus.yml: |
+      global:
+        external_labels:
+          monitor: prometheus
+          replica: '$(HOSTNAME)'
+      scrape_configs:
+      - job_name: telemeter
+        tls_config:
+          insecure_skip_verify: true
+        honor_labels: true
+        params:
+          match[]:
+          - '{job="Thoth Metrics (test)"}'
+          - '{job="Thoth Metrics (stage)"}'
+          - '{job="Thoth Dgraph aggregate-exporter (test)"}'
+          - '{job="Thoth Dgraph aggregate-exporter (stage)"}'
+        scrape_interval: 60s
+        scrape_timeout: 10s
+        metrics_path: /federate
+        scheme: https
+        static_configs:
+        - targets:
+          - ${PROM_FEDERATE_TARGET}
+        bearer_token: "${PROM_FEDERATE_BEARER}"
+      - job_name: prophet
+        tls_config:
+          insecure_skip_verify: true
+        honor_labels: true
+        scrape_interval: 60s
+        scrape_timeout: 10s
+        metrics_path: /metrics
+        scheme: http
+        static_configs:
+        - targets: ['prometheus-anomaly-detector-prophet-2.cloud.paas.psi.redhat.com', 'prometheus-anomaly-detector-prophet-1.cloud.paas.psi.redhat.com', 'prometheus-anomaly-detector-prophet-0.cloud.paas.psi.redhat.com']
+      - job_name: fourier
+        tls_config:
+          insecure_skip_verify: true
+        honor_labels: true
+        scrape_interval: 60s
+        scrape_timeout: 10s
+        metrics_path: /metrics
+        scheme: http
+        static_configs:
+        - targets:
+          - prometheus-anomaly-detector-fourier.cloud.paas.psi.redhat.com
