@@ -1,0 +1,64 @@
+---
+- name: Deploy LAD stack
+  hosts: 127.0.0.1
+  connection: local
+  tasks:
+    - name: Load the common vars file
+      include_vars:
+        file: "vars/common-vars.yaml"
+
+    - name: Load the Prometheus vars file
+      include_vars:
+        file: "vars/prometheus-vars.yaml"
+
+    - debug:
+        msg: "Target Namespace -> {{ namespace }}"
+
+    - name: Get the Services we need to monitor
+      k8s_facts:
+        api_version: v1
+        kind: Service
+        validate_certs: false
+        # Every service in the specified namespace
+        # with this label will be monitored
+        label_selectors:
+          - monitor = True
+        namespace: "{{ namespace }}"
+      register: prom_target_services
+
+    - name: Setup empty list for scraping_targets
+      set_fact:
+        prometheus_target_hosts: []
+
+    - name: Extract host and port for the targets
+      set_fact:
+        prometheus_target_hosts: >-
+          {{ prometheus_target_hosts +
+          [item.metadata.name + '.'
+          + item.metadata.namespace + '.'
+          + 'svc' + ':'
+          + (item.spec.ports[0].port | string)] }}
+      with_items: "{{ prom_target_services.resources }}"
+
+    - debug:
+        msg: "Prometheus targets -> {{ prometheus_target_hosts }}"
+
+    - include_role:
+        name: prometheus
+
+    - name: Get the Prometheus route
+      k8s_facts:
+        api_version: v1
+        kind: Route
+        validate_certs: false
+        name: "{{ prometheus_app_name }}"
+        namespace: "{{ namespace }}"
+      register: prometheus_route
+
+    - debug:
+        msg: >-
+          Prometheus Route ->
+          http://{{ prometheus_route.resources[0].spec.host }}
+    #
+    # - include_role:
+    #     name: grafana
