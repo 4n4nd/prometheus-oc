@@ -1,7 +1,9 @@
 ---
-prometheus_app_name: "test-prometheus-playbook"
+prometheus_app_name: "test-prometheus"
 prometheus_container_image: quay.io/prometheus/prometheus:v2.13.0
-prometheus_container_memory_limit: 1Gi
+prometheus_container_memory_limit: 2Gi
 prometheus_target_hosts: >-
   ['target1.host.com:8080', 'target2.host.com:8080']
-prometheus_scrape_job_name: test-playbook
+prometheus_scrape_job_name: test-job
+prometheus_pvc_capacity: "10Gi"
+prometheus_tsdb_retention_time: "2d"

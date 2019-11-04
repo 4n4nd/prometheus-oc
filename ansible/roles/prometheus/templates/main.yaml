@@ -21,7 +21,8 @@ spec:
       containers:
         - name: "{{ prometheus_app_name }}"
           args:
-            - --storage.tsdb.retention.time=12h
+            - --storage.tsdb.path=/data
+            - --storage.tsdb.retention.time={{ prometheus_tsdb_retention_time }}
             - --storage.tsdb.min-block-duration=2h
             - --storage.tsdb.max-block-duration=2h
             - --config.file=/etc/prometheus/prometheus.yml
@@ -35,7 +36,7 @@ spec:
           volumeMounts:
             - mountPath: /etc/prometheus
               name: prometheus-config
-            - mountPath: /prometheus
+            - mountPath: /data
               name: prometheus-data
       restartPolicy: Always
       volumes:
@@ -44,7 +45,8 @@ spec:
             defaultMode: 420
             name: "{{ prometheus_app_name }}"
         - name: prometheus-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: "{{ prometheus_app_name }}"
 
 ---
 apiVersion: v1
@@ -71,6 +73,20 @@ spec:
   to:
     kind: Service
     name: "{{ prometheus_app_name }}"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: "{{ prometheus_app_name }}"
+  name: "{{ prometheus_app_name }}"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: "{{ prometheus_pvc_capacity }}"
 
 ---
 apiVersion: v1
