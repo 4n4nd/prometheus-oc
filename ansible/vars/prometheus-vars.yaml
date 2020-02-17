@@ -7,3 +7,4 @@ prometheus_target_hosts: >-
 prometheus_scrape_job_name: test-job
 prometheus_pvc_capacity: "10Gi"
 prometheus_tsdb_retention_time: "2d"
+prometheus_generate_dummy_data: true

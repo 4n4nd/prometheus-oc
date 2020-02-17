@@ -20,6 +20,16 @@
     kind: ConfigMap
     name: "{{ prometheus_app_name }}"
 
+- name: Deploy Job to generate dummy metrics
+  k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    namespace: "{{ namespace }}"
+    verify_ssl: "no"
+    definition: >-
+      {{ lookup('template', 'generate-data-job.yaml') }}
+  when: "prometheus_generate_dummy_data == true"
+
 - name: Deploy the Prometheus objects to Openshift
   k8s:
     kubeconfig: "{{ kubeconfig }}"
